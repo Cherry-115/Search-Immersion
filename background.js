@@ -16,10 +16,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === "searchHistory") {
-    chrome.history.search({ text: request.query, maxResults: 20 }, (results) => {
+    chrome.history.search({ text: request.query, maxResults: 100 }, (results) => {
       sendResponse({ data: results });
     });
     return true; 
+  }
+
+  if (request.action === "deleteHistory") {
+    if (request.url) {
+        chrome.history.deleteUrl({ url: request.url }, () => {
+            sendResponse({ success: true });
+        });
+        return true;
+    }
   }
 
   if (request.action === "fetchNews") {

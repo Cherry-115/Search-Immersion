@@ -432,7 +432,7 @@ function openDockEditModal(index) {
     if(!item) return;
     document.getElementById('dock-edit-icon').value = item.icon;
     document.getElementById('dock-edit-url').value = item.url;
-    contextMenuTargetIndex = index; // Ensure consistent index
+    contextMenuTargetIndex = index;
     
     document.getElementById('dock-edit-modal').classList.add('show');
 }
@@ -539,7 +539,6 @@ function savePreferences() {
   if (prevLang !== prefs.language) {
       document.getElementById('immersion-root')?.remove();
       initNestHub();
-      // Re-open settings to show change (optional, but good UX)
       document.getElementById('settings-btn').click();
       document.getElementById('settings-modal').classList.add('show');
       return; 
@@ -634,7 +633,6 @@ function renderCalendarSystem() {
   const now = new Date();
   const year = now.getFullYear(); const month = now.getMonth();
   const months = [t('jan'), t('feb'), t('mar'), t('apr'), t('may'), t('jun'), t('jul'), t('aug'), t('sep'), t('oct'), t('nov'), t('dec')];
-  // Format Month Year
   const prefs = JSON.parse(localStorage.getItem('immersion_prefs')) || defaultSettings;
   let myStr = `${months[month]} ${year}`;
   if (prefs.language === 'ja' || (!prefs.language && navigator.language.startsWith('ja'))) myStr = `${year}年 ${months[month]}`;
@@ -748,22 +746,35 @@ function setupSearch() {
     input.value = '';
     input.focus();
     updateClearBtn();
-    // Trigger suggestions update (empty state)
     const container = document.getElementById('search-suggestions');
     if(container) {
-       // Manual trigger or re-dispatch event? 
-       // We can call the logic. But setupSearchAutocomplete has listeners.
-       // Let's dispatch an input event or just rely on focus triggering it if we added that logic?
-       // We added focus listener to fetch empty suggestions.
     }
   };
 
   input.addEventListener('keydown', (e) => { 
     if(e.key === 'Enter' && input.value) {
        const activeItem = document.querySelector('.suggestion-item.active');
-       if (!activeItem) {
-          window.location.href = `https://www.google.com/search?q=${encodeURIComponent(input.value)}`; 
+       if (activeItem) {
+          return;
        }
+       
+       const val = input.value.trim();
+       let isUrl = false;
+       
+       const hasProtocol = /^[a-zA-Z]+:\/\//.test(val);
+       const isDomain = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:[0-9]+)?(\/.*)?$/.test(val);
+       const noSpaces = !val.includes(' ');
+       
+       if (hasProtocol) {
+           window.location.href = val;
+           return;
+       }
+       if (noSpaces && (val.startsWith('www.') || isDomain)) {
+           window.location.href = 'https://' + val;
+           return;
+       }
+
+       window.location.href = `https://www.google.com/search?q=${encodeURIComponent(val)}`; 
     }
   }); 
 
@@ -781,11 +792,9 @@ function setupSearchAutocomplete(input) {
   let currentFocus = -1;
 
   const fetchSuggestions = debounce((query) => {
-    // OLD: if (!query) { container.style.display = 'none'; return; }
     
     const isEmp = !query || query.trim() === '';
 
-    // 1. Fetch History
     const historyPromise = new Promise((resolve) => {
       try {
         if (!chrome.runtime?.id) { resolve([]); return; }
@@ -798,7 +807,6 @@ function setupSearchAutocomplete(input) {
       }
     });
 
-    // 2. Fetch Google Suggestions (only if query not empty)
     const googlePromise = isEmp ? Promise.resolve([]) : fetch(`https://www.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`)
       .then(res => res.json())
       .then(data => data[1] || [])
@@ -807,9 +815,8 @@ function setupSearchAutocomplete(input) {
     Promise.all([historyPromise, googlePromise]).then(([historyItems, googleItems]) => {
       const combined = [];
       const seenTitles = new Set();
+      const maxHistory = 8;
       
-      const maxHistory = isEmp ? 8 : 3;
-
       const extractSearchTerm = (url) => {
         try {
           const u = new URL(url);
@@ -825,12 +832,11 @@ function setupSearchAutocomplete(input) {
         
         const term = extractSearchTerm(h.url);
         if (term && !seenTitles.has(term)) {
-          combined.push({ text: term, type: 'history' });
+          combined.push({ text: term, type: 'history', url: h.url });
           seenTitles.add(term);
         }
       });
       
-      // Process google: max 5
       googleItems.forEach(g => {
         if(combined.length < 8 && !seenTitles.has(g)) {
            combined.push({ text: g, type: 'search' });
@@ -854,11 +860,36 @@ function setupSearchAutocomplete(input) {
       div.className = 'suggestion-item';
       div.setAttribute('data-val', item.text);
       const icon = item.type === 'history' ? '🕒' : '🔍';
-      div.innerHTML = `<span style="opacity:0.6; margin-right:10px;">${icon}</span> ${item.text}`;
+      
+      let innerHTML = `<div style="display:flex; align-items:center; flex:1; min-width:0;">
+        <span style="opacity:0.6; margin-right:10px; flex-shrink:0;">${icon}</span> 
+        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.text}</span>
+      </div>`;
+
+      if (item.type === 'history') {
+          innerHTML += `<span class="suggestion-del" title="${t('ctx_del')}" style="opacity:0.4; padding:0 10px; cursor:pointer;">×</span>`;
+      }
+      div.innerHTML = innerHTML;
+
       div.onclick = () => {
         input.value = item.text;
         window.location.href = `https://www.google.com/search?q=${encodeURIComponent(item.text)}`;
       };
+      
+      if (item.type === 'history') {
+          const delBtn = div.querySelector('.suggestion-del');
+          if(delBtn) {
+              delBtn.onclick = (e) => {
+                  e.stopPropagation();
+                  chrome.runtime.sendMessage({ action: "deleteHistory", url: item.url }, () => {
+                      fetchSuggestions(input.value || '');
+                  });
+              };
+              delBtn.onmouseenter = () => delBtn.style.opacity = '1';
+              delBtn.onmouseleave = () => delBtn.style.opacity = '0.4';
+          }
+      }
+
       container.appendChild(div);
     });
     container.style.display = 'block';
@@ -867,7 +898,7 @@ function setupSearchAutocomplete(input) {
 
   input.addEventListener('input', () => { 
     fetchSuggestions(input.value); 
-    if(!input.value) fetchSuggestions(''); // Also update if cleared manually via backspace
+    if(!input.value) fetchSuggestions('');
   });
   const trigger = () => { if(!input.value) fetchSuggestions(''); };
   input.addEventListener('focus', trigger);
@@ -903,7 +934,6 @@ function setupSearchAutocomplete(input) {
     }
   };
 
-  // Close when clicking outside
   document.addEventListener('click', (e) => {
     if (e.target !== input && e.target !== container) {
       container.style.display = 'none';
@@ -951,7 +981,6 @@ function startClock() {
     const months = [t('jan'), t('feb'), t('mar'), t('apr'), t('may'), t('jun'), t('jul'), t('aug'), t('sep'), t('oct'), t('nov'), t('dec')];
     const mStr = months[now.getMonth()];
     const dStr = days[now.getDay()];
-    // Simple localization for date
     let dateStr = `${mStr} ${now.getDate()} (${dStr})`;
     if (prefs.language === 'ja' || (!prefs.language && navigator.language.startsWith('ja'))) {
          dateStr = `${mStr}${now.getDate()}日 (${dStr})`;
@@ -1063,7 +1092,6 @@ function startMediaSync() {
                  currentArt = d.artwork; 
                  bgLayer.style.backgroundImage = `url(${d.artwork})`; 
              } else if (!prefs.mediaBackground && currentArt !== 'default' && bgLayer) {
-                 // Revert to default if setting is off but art was set
                  currentArt = 'default';
                  const p = JSON.parse(localStorage.getItem('immersion_prefs')) || defaultSettings;
                  const targetImg = (p.idleImgUrl && p.idleImgUrl.startsWith('http')) ? p.idleImgUrl : sessionIdleArt;
