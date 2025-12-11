@@ -22,7 +22,7 @@
     {
       "matches": ["*://www.google.com/*", "*://www.google.co.jp/*"],
       "css": ["styles.css"],
-      "js": ["content.js"],
+      "js": ["i18n/ja.js", "i18n/en.js", "i18n/ko.js", "content.js"],
       "run_at": "document_end"
     }
   ]
