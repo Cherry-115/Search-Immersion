@@ -15,6 +15,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
+  if (request.action === "searchHistory") {
+    chrome.history.search({ text: request.query, maxResults: 20 }, (results) => {
+      sendResponse({ data: results });
+    });
+    return true; 
+  }
+
   if (request.action === "fetchNews") {
     const targetUrl = request.url;
     if (!targetUrl) {
@@ -121,8 +128,8 @@ function controlMediaPage(c) {
       if(c==='prev') document.querySelector('.previous-button')?.click();
     } else { 
       if(c==='toggle') v.paused ? v.play() : v.pause();
-      if(c==='next') document.querySelector('.ytp-next-button')?.click();
-      if(c==='prev') document.querySelector('.ytp-prev-button')?.click();
+      if(c === "prev") document.querySelector('.ytp-prev-button')?.click();
+      if(c === "next") document.querySelector('.ytp-next-button')?.click();
     }
   } else { if(c==='toggle' && v) v.paused ? v.play() : v.pause(); }
 }
